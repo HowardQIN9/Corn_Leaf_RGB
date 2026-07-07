@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Environment
+.env
+.venv/
+venv/
+
+# Data files
+data/
+raw/
+outputs/
+results/
+
+# Large image/data files
+*.tif
+*.tiff
+*.npy
+*.npz
+*.csv
+
+# OS
+.DS_Store
+Thumbs.db
