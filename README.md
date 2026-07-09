@@ -105,3 +105,78 @@ CLI arguments override config-file values.
 ```powershell
 pytest
 ```
+
+## Geometric Centerline And Sampling Lines
+
+After segmentation, you can generate horizontal geometric centerlines and perpendicular sampling lines from binary masks. The centerline is computed from mask geometry only:
+
+```text
+y_center_horizontal = median((y_top(x) + y_bottom(x)) / 2)
+```
+
+It is a proxy for the leaf direction, not a detected biological midrib. By default, the module creates 5 vertical sampling lines at 5 interior positions along the leaf, extracts green-channel profiles along those lines, and averages each profile point across 5 pixels parallel to the horizontal centerline.
+
+For the Leaf2-only crop masks created by `scripts/extract_leaf2_crops.py`:
+
+```powershell
+python -m leafsampling.cli `
+  --mask_dir outputs/RGB_tall_v9_leaf2_crops `
+  --image_dir outputs/RGB_tall_v9_leaf2_crops `
+  --output_dir outputs/RGB_tall_v9_leaf2_centerline_sampling `
+  --n_sampling_lines 5 `
+  --strip_width_px 5 `
+  --smoothing_window_length 51 `
+  --smoothing_polyorder 2 `
+  --edge_trim_ratio 0.05 `
+  --tip_trim_ratio 0.02 `
+  --min_leaf_width 20
+```
+
+Outputs:
+
+```text
+output_dir/
+  centerline/
+    IMG_001_centerline.csv
+  sampling_lines/
+    IMG_001_sampling_lines.csv
+  profiles/
+    IMG_001_green_profiles.csv
+  qc/
+    IMG_001_centerline_sampling_overlay.png
+  metadata/
+    centerline_sampling_metadata.csv
+```
+
+## Midrib Valley Detection
+
+After green profiles are combined, detect the midrib-related valley in the middle of each transverse profile:
+
+```powershell
+python scripts/detect_midrib_peaks.py
+```
+
+The detector searches only the middle profile region, defaults to detecting a dark valley in `green_mean`, rejects narrow spikes, and marks a leaf as `pass` only when at least 3 of 5 profile lines have consistent detected positions.
+
+Outputs:
+
+```text
+outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/
+  midrib_peak_line_results.csv
+  midrib_peak_leaf_summary.csv
+  all_leaf2_green_profiles_with_midrib_sides.csv
+```
+
+The annotated profile table adds `side_of_midrib`, `distance_from_midrib_split`, and `is_midrib_peak_region` for downstream analysis.
+
+To visually inspect the detected valleys and split points:
+
+```powershell
+python scripts/plot_midrib_detection.py
+```
+
+This writes one PNG per leaf to:
+
+```text
+outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/qc_plots/
+```
