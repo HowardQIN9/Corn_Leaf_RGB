@@ -24,8 +24,8 @@ def separate_and_save(
     output_csv: Path,
     *,
     value_column: str = "green_mean",
-    valley_distance: int = 15,
-    smooth_window: int = 51,
+    valley_distance: int = 7,
+    smooth_window: int = 21,
 ) -> int:
     """Read split profiles, add meso/peak columns, and save a long CSV."""
     split_profiles = pd.read_csv(input_csv)
@@ -70,6 +70,23 @@ def plot_meso_curves(
     count = 0
     for source_profile_file, leaf_df in separated.groupby("source_profile_file", sort=True):
         _plot_one_leaf_meso(source_profile_file, leaf_df, output_dir, value_column, dpi)
+        count += 1
+    return count
+
+
+def plot_meso_only_curves(
+    separated_csv: Path,
+    output_dir: Path,
+    *,
+    value_column: str = "green_mean",
+    dpi: int = 160,
+) -> int:
+    """Plot one 5x2 QC figure per leaf containing only mesophyll baselines."""
+    separated = pd.read_csv(separated_csv)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    count = 0
+    for source_profile_file, leaf_df in separated.groupby("source_profile_file", sort=True):
+        _plot_one_leaf_meso_only(source_profile_file, leaf_df, output_dir, value_column, dpi)
         count += 1
     return count
 
@@ -178,6 +195,52 @@ def _plot_one_leaf_meso(
     return output_path
 
 
+def _plot_one_leaf_meso_only(
+    source_profile_file: str,
+    leaf_df: pd.DataFrame,
+    output_dir: Path,
+    value_column: str,
+    dpi: int,
+) -> Path:
+    meso_col = f"{value_column}_meso"
+    sample_ids = sorted(leaf_df["sample_id"].dropna().astype(int).unique())
+    fig, axes = plt.subplots(len(sample_ids), 2, figsize=(9.2, 2.0 * len(sample_ids)), sharex=True, sharey=True)
+    if len(sample_ids) == 1:
+        axes = [axes]
+
+    y_min = float(leaf_df[meso_col].min())
+    y_max = float(leaf_df[meso_col].max())
+    padding = max(1.0, 0.05 * (y_max - y_min))
+
+    for row_index, sample_id in enumerate(sample_ids):
+        for col_index, side in enumerate(["upper", "lower"]):
+            axis = axes[row_index][col_index]
+            profile = leaf_df[
+                (leaf_df["sample_id"].astype(int) == sample_id) & (leaf_df["midrib_side"] == side)
+            ].sort_values("distance_index")
+            axis.plot(
+                profile["relative_distance_from_midrib"],
+                profile[meso_col],
+                color="#c45a12",
+                linewidth=1.3,
+            )
+            axis.set_xlim(0.0, 1.0)
+            axis.set_ylim(y_min - padding, y_max + padding)
+            axis.grid(True, color="#dddddd", linewidth=0.6)
+            axis.set_title(f"line {sample_id + 1} | {side}", fontsize=9)
+            if row_index == len(sample_ids) - 1:
+                axis.set_xlabel("distance from midrib boundary")
+            if col_index == 0:
+                axis.set_ylabel(meso_col)
+
+    fig.suptitle(f"{_title(source_profile_file)} | mesophyll baseline only", fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    output_path = output_dir / f"{Path(source_profile_file).stem}_green_meso_only.png"
+    fig.savefig(output_path, dpi=dpi)
+    plt.close(fig)
+    return output_path
+
+
 def _title(source_profile_file: str) -> str:
     info = parse_leaf_filename(Path(source_profile_file))
     if info is None:
@@ -213,9 +276,26 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/split_curve_meso_plots"),
     )
+    parser.add_argument(
+        "--meso_only_plot_dir",
+        type=Path,
+        default=Path(
+            "outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/split_curve_meso_only_plots"
+        ),
+    )
     parser.add_argument("--value_column", default="green_mean")
-    parser.add_argument("--valley_distance", type=int, default=15)
-    parser.add_argument("--smooth_window", type=int, default=51)
+    parser.add_argument(
+        "--valley_distance",
+        type=int,
+        default=7,
+        help="Minimum spacing between baseline valley anchors (smaller is more sensitive to small, close peaks).",
+    )
+    parser.add_argument(
+        "--smooth_window",
+        type=int,
+        default=21,
+        help="Savitzky-Golay window for the mesophyll envelope (smaller follows local valleys more closely).",
+    )
     parser.add_argument("--skip_plots", action="store_true")
     parser.add_argument("--dpi", type=int, default=160)
     return parser
@@ -241,6 +321,13 @@ def main() -> None:
             dpi=args.dpi,
         )
         print(f"Wrote {n_meso_plots} meso baseline plots to {args.meso_plot_dir}")
+        n_meso_only_plots = plot_meso_only_curves(
+            args.output_csv,
+            args.meso_only_plot_dir,
+            value_column=args.value_column,
+            dpi=args.dpi,
+        )
+        print(f"Wrote {n_meso_only_plots} meso-only plots to {args.meso_only_plot_dir}")
 
 
 if __name__ == "__main__":

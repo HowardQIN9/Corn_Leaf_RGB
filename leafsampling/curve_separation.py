@@ -9,8 +9,8 @@ from scipy.signal import find_peaks, savgol_filter
 
 def create_valley_envelope(
     values: np.ndarray,
-    valley_distance: int = 15,
-    smooth_window: int = 51,
+    valley_distance: int = 7,
+    smooth_window: int = 21,
 ) -> np.ndarray:
     """Create a smooth lower envelope through local valleys and endpoints."""
     y_raw = _fill_missing(np.asarray(values, dtype=float))
@@ -43,8 +43,8 @@ def separate_profile_components(
     split_profiles: pd.DataFrame,
     *,
     value_column: str = "green_mean",
-    valley_distance: int = 15,
-    smooth_window: int = 51,
+    valley_distance: int = 7,
+    smooth_window: int = 21,
 ) -> pd.DataFrame:
     """Add lower-envelope baseline and residual peak columns to split profiles."""
     required = {"source_profile_file", "sample_id", "midrib_side", "distance_index", value_column}

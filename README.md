@@ -148,15 +148,41 @@ output_dir/
     centerline_sampling_metadata.csv
 ```
 
+The sampled green-channel curves are saved in two forms:
+
+```text
+outputs/RGB_tall_v9_leaf2_centerline_sampling/
+  profiles/
+    IMG_001_green_profiles.csv       # one long-format curve table per leaf
+  metadata/
+    all_leaf2_green_profiles.csv     # all per-leaf curve tables combined
+```
+
+Each leaf has 5 transverse curves, identified by `sample_id`. Within each
+curve, `position_fraction` runs from one leaf edge to the other, and
+`green_mean` is the green-channel intensity averaged across the configured
+5-pixel-wide strip. The per-leaf profile CSVs are created by
+`python -m leafsampling.cli`. Combine them for downstream analysis with:
+
+```powershell
+python scripts/combine_green_profiles.py
+```
+
 ## Midrib Valley Detection
 
-After green profiles are combined, detect the midrib-related valley in the middle of each transverse profile:
+After green profiles are combined, detect the midrib-related feature in the
+middle of each transverse profile:
 
 ```powershell
 python scripts/detect_midrib_peaks.py
 ```
 
-The detector searches only the middle profile region, defaults to detecting a dark valley in `green_mean`, rejects narrow spikes, and marks a leaf as `pass` only when at least 3 of 5 profile lines have consistent detected positions.
+The current script defaults to detecting a broad bright peak in `green_mean`
+(`--peak_polarity bright`). It searches only the middle profile region,
+rejects narrow spikes, and marks a leaf as `pass` only when at least 3 of 5
+profile lines have consistent detected positions. Use
+`--peak_polarity dark` when the image convention makes the midrib a dark
+valley instead.
 
 Outputs:
 
@@ -180,3 +206,56 @@ This writes one PNG per leaf to:
 ```text
 outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/qc_plots/
 ```
+
+## Split And Separated Curves
+
+After automatic detection and any manual adjustment, split each transverse
+curve at the two boundaries of the detected midrib region:
+
+```powershell
+python scripts/split_profiles_from_midrib.py
+```
+
+The default command reads the manually reviewed line results and writes:
+
+```text
+outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/
+  midrib_peak_line_results_manual_adjusted.csv
+  all_leaf2_green_profiles_split_from_midrib.csv
+  split_profile_plots/
+```
+
+In the split table, each original curve becomes an `upper` and `lower` curve.
+`relative_distance_from_midrib` starts at 0 at the midrib boundary and reaches
+1 at the corresponding leaf edge.
+
+Separate each split curve into a smooth lower-envelope mesophyll baseline and
+a residual peak curve with:
+
+```powershell
+python scripts/separate_split_curves.py `
+  --valley_distance 7 `
+  --smooth_window 21
+```
+
+The current valley-anchor distance is 7 profile points. Smaller values allow
+the baseline to recognize the bottoms around smaller, closely spaced peaks;
+larger values ignore more local valleys. The mesophyll-envelope smoothing
+window is 21 profile points and controls the smoothness after those valley
+anchors are connected.
+
+Final curve outputs are saved here:
+
+```text
+outputs/RGB_tall_v9_leaf2_centerline_sampling/midrib_detection/
+  all_leaf2_green_profiles_split_meso_peak.csv
+  split_curve_meso_plots/             # raw curve plus mesophyll baseline
+  split_curve_meso_only_plots/        # mesophyll baseline only, meso-scaled y-axis
+  split_curve_separation_plots/       # residual peak curve
+```
+
+The final CSV retains the original `green_mean` curve and adds:
+
+- `green_mean_meso`: smoothed lower-envelope baseline.
+- `green_mean_peak`: residual curve, calculated as
+  `green_mean - green_mean_meso`.
