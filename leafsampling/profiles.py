@@ -30,7 +30,37 @@ def extract_green_profiles(
     across profile_width_px pixels shifted along the local tangent direction.
     """
     green = extract_green_channel(image)
+    return extract_scalar_profiles(
+        green,
+        mask,
+        sampling_df,
+        profile_width_px=profile_width_px,
+        value_name="green",
+    )
+
+
+def extract_scalar_profiles(
+    values: np.ndarray,
+    mask: np.ndarray,
+    sampling_df: pd.DataFrame,
+    profile_width_px: int = 5,
+    *,
+    value_name: str = "signal",
+) -> pd.DataFrame:
+    """Extract averaged profiles from a two-dimensional scalar image.
+
+    This generic form lets the same saved sampling geometry be applied to raw
+    green, vegetation-index, and contrast-enhanced images. Only pixels inside
+    ``mask`` contribute to a profile average.
+    """
+    scalar = np.asarray(values)
+    if scalar.ndim != 2:
+        raise ValueError(f"Scalar profile input must be 2-D, got {scalar.shape}")
     mask_binary = np.asarray(mask) > 0
+    if scalar.shape != mask_binary.shape:
+        raise ValueError(
+            f"Scalar image and mask shapes differ: {scalar.shape} vs {mask_binary.shape}"
+        )
     rows: list[dict[str, float | int]] = []
     for _, line in sampling_df.iterrows():
         tangent = np.array([line["tangent_x"], line["tangent_y"]], dtype=float)
@@ -49,7 +79,9 @@ def extract_green_profiles(
                 x = int(round(float(shifted[0])))
                 y = int(round(float(shifted[1])))
                 if _inside(mask_binary, x, y):
-                    values.append(float(green[y, x]))
+                    value = float(scalar[y, x])
+                    if np.isfinite(value):
+                        values.append(value)
             if not values:
                 continue
             rows.append(
@@ -59,9 +91,9 @@ def extract_green_profiles(
                     "position_fraction": float(fraction),
                     "x": float(point[0]),
                     "y": float(point[1]),
-                    "green_mean": float(np.mean(values)),
-                    "green_min": float(np.min(values)),
-                    "green_max": float(np.max(values)),
+                    f"{value_name}_mean": float(np.mean(values)),
+                    f"{value_name}_min": float(np.min(values)),
+                    f"{value_name}_max": float(np.max(values)),
                     "n_pixels_averaged": len(values),
                     "profile_width_px": int(profile_width_px),
                 }
